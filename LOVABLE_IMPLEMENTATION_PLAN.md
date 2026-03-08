@@ -9,7 +9,7 @@ This document contains the exact prompts to paste into Lovable, in order, to ite
 Before starting in Lovable:
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com)
-2. **Get an OpenAI API key** from [platform.openai.com](https://platform.openai.com)
+2. **Get a Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey) (free tier is generous)
 3. **Create a new Lovable project** -- name it "Adaptive Routines"
 4. **Connect Supabase** to Lovable using the Supabase integration (Project URL + anon key)
 
@@ -286,9 +286,9 @@ When the user types a message and hits send:
 - Show a typing indicator (three animated dots in an AI bubble)
 - Call a Supabase Edge Function that:
   a. Receives the user's prompt
-  b. Sends it to OpenAI API with this system prompt:
+  b. Sends it to the Google Gemini API (model: gemini-3.1-pro) with this prompt:
 
-SYSTEM PROMPT:
+PROMPT (sent as the user message, since Gemini doesn't have a separate system role in the REST API):
 "You are an expert habit coach and schedule planner. The user will describe a goal, preferred schedule, and duration. Return a JSON object with this structure:
 {
   \"plan_title\": \"A short motivating name\",
@@ -302,9 +302,13 @@ SYSTEM PROMPT:
     }
   ]
 }
-Rules: Generate sessions for the FULL duration. Make topics progressive. Each MVR must be genuinely doable in under 5 minutes. Respect day exclusions. Vary topics to prevent monotony."
+Rules: Generate sessions for the FULL duration. Make topics progressive. Each MVR must be genuinely doable in under 5 minutes. Respect day exclusions. Vary topics to prevent monotony.
 
-  c. Returns the parsed JSON to the client
+USER GOAL: [insert user prompt here]"
+
+  c. The Gemini API must be called with generationConfig: { responseMimeType: "application/json", temperature: 0.7 } to enforce JSON output
+  d. Parse the response from response.candidates[0].content.parts[0].text
+  e. Returns the parsed JSON plan to the client
 
 After receiving the AI response, render it as a PLAN PREVIEW COMPONENT (not raw text):
 - Plan title in text-xl font-bold
@@ -329,16 +333,29 @@ Create a Supabase Edge Function called "generate-plan" that:
 
 1. Accepts a POST request with JSON body: { "prompt": "user's goal description" }
 2. Validates the user is authenticated (check the Authorization header JWT)
-3. Calls the OpenAI API (model: gpt-4o-mini) with:
-   - The system prompt from the planner specification
-   - The user's prompt as the user message
-   - response_format: { type: "json_object" }
-   - temperature: 0.7
-4. Parses the JSON response
-5. Returns the parsed plan to the client
+3. Calls the Google Gemini API using a direct REST call (no SDK needed in Deno):
 
-Store the OpenAI API key as a Supabase secret (not in client code).
-Handle errors gracefully -- if the AI returns malformed JSON, retry once, then return a friendly error message.
+   URL: https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent?key=${GEMINI_API_KEY}
+   Method: POST
+   Headers: { "Content-Type": "application/json" }
+   Body: {
+     "contents": [
+       {
+         "role": "user",
+         "parts": [{ "text": "<system prompt instructions> + USER GOAL: <user's prompt>" }]
+       }
+     ],
+     "generationConfig": {
+       "responseMimeType": "application/json",
+       "temperature": 0.7
+     }
+   }
+
+4. Extracts the JSON string from: response.candidates[0].content.parts[0].text
+5. Parses that string as JSON and returns the plan object to the client
+
+Store the Gemini API key as a Supabase secret named GEMINI_API_KEY (not in client code).
+Handle errors gracefully -- if Gemini returns malformed JSON, retry once, then return a friendly error message.
 ```
 
 ---
@@ -478,6 +495,6 @@ This will let me verify the dashboard timeline, status colors, and all interacti
 
 3. **Use the Supabase integration early.** Connect Supabase in Step 3 and don't delay it. Data-connected UI is much easier to debug than mocked-up UI.
 
-4. **Keep the Edge Function simple.** If the Edge Function fails to deploy, ask Lovable to show you the function code so you can deploy it manually via the Supabase dashboard.
+4. **Keep the Edge Function simple.** If the Edge Function fails to deploy, ask Lovable to show you the function code so you can deploy it manually via the Supabase dashboard. Store your Gemini API key as a Supabase secret named `GEMINI_API_KEY`.
 
 5. **Test on mobile.** After each step, open the Lovable preview on your phone browser to verify the mobile layout. The app is designed mobile-first.

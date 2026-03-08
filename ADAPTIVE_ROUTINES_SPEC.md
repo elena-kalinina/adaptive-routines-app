@@ -16,7 +16,7 @@ A mobile-first Progressive Web App (PWA) that converts natural-language goals in
 | UI Components | shadcn/ui (ships with Lovable) |
 | Icons | lucide-react (stroke-width 1.5) |
 | Backend / Auth | Supabase (Postgres, Auth, Row-Level Security) |
-| AI Integration | OpenAI API (GPT-4o or similar) with JSON mode / Structured Outputs |
+| AI Integration | Google Gemini API (gemini-3.1-pro) with JSON mode |
 | Deployment | Lovable hosting (Netlify under the hood), PWA-enabled |
 
 ---
@@ -268,10 +268,10 @@ After 6 PM (configurable), if any sessions have status = 'pending':
 
 ### 7.1 API Configuration
 
-- **Provider:** OpenAI (or compatible)
-- **Model:** `gpt-4o` (or `gpt-4o-mini` for cost savings)
-- **Response format:** JSON mode enabled (`response_format: { type: "json_object" }`)
-- **API key:** Stored as Supabase Edge Function secret (never exposed client-side)
+- **Provider:** Google Gemini
+- **Model:** `gemini-3.1-pro` (latest frontier model, best reasoning and structured output quality)
+- **Response format:** JSON mode enabled via `responseMimeType: "application/json"` in generation config
+- **API key:** Stored as Supabase Edge Function secret named `GEMINI_API_KEY` (never exposed client-side)
 
 ### 7.2 System Prompt
 
@@ -305,8 +305,29 @@ Rules:
 The LLM call must happen server-side (Supabase Edge Function) to protect the API key:
 
 ```
-Client (React) -> Supabase Edge Function -> OpenAI API -> Parse JSON -> Insert into sessions table -> Return confirmation to client
+Client (React) -> Supabase Edge Function -> Gemini API -> Parse JSON -> Insert into sessions table -> Return confirmation to client
 ```
+
+### 7.4 Gemini API Call Format
+
+The Edge Function calls the Gemini REST API directly (no SDK needed in Deno):
+
+```
+POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent?key=GEMINI_API_KEY
+
+Body:
+{
+  "contents": [
+    { "role": "user", "parts": [{ "text": "<system prompt + user goal>" }] }
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "temperature": 0.7
+  }
+}
+```
+
+The response JSON is at `response.candidates[0].content.parts[0].text` -- parse that string as JSON to get the plan object.
 
 ---
 
