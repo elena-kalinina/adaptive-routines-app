@@ -23,3 +23,13 @@ A mobile-first PWA that uses AI to convert user goals into actionable, adaptable
 | Backend | Supabase (Postgres, Auth, Edge Functions) |
 | AI | OpenAI API (GPT-4o) with structured JSON outputs |
 | Deployment | Lovable / PWA |
+
+## Getting Started
+
+```bash
+# Clone the repository
+git clone https://github.com/elena-kalinina/adaptive-routines-app.git
+cd adaptive-routines-app
+```
+
+Detailed setup instructions will be added as the project scaffolding is built out.
