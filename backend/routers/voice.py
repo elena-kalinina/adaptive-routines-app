@@ -11,8 +11,9 @@ from models import RoutineSession, UserProfile
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
 SLNG_API_KEY = os.getenv("SLNG_API_KEY", "")
-SLNG_TTS_MODEL = os.getenv("SLNG_TTS_MODEL", "deepgram/aura:2")
-SLNG_TTS_URL = "https://api.slng.ai/v1/bridges/unmute/tts/{model}"
+SLNG_TTS_ENDPOINT = os.getenv("SLNG_TTS_ENDPOINT", "slng/deepgram/aura:2-en")
+SLNG_TTS_VOICE = os.getenv("SLNG_TTS_VOICE", "aura-2-theia-en")
+SLNG_TTS_URL = "https://api.slng.ai/v1/tts/{endpoint}"
 
 
 def _format_time_12h(time_str: str) -> str:
@@ -61,11 +62,11 @@ def build_briefing_text(sessions: list[RoutineSession], score: int) -> str:
 
 
 async def _call_slng_tts(text: str) -> bytes:
-    url = SLNG_TTS_URL.format(model=SLNG_TTS_MODEL)
+    url = SLNG_TTS_URL.format(endpoint=SLNG_TTS_ENDPOINT)
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             url,
-            json={"text": text},
+            json={"text": text, "model": SLNG_TTS_VOICE},
             headers={
                 "Authorization": f"Bearer {SLNG_API_KEY}",
                 "Content-Type": "application/json",
@@ -97,4 +98,4 @@ async def daily_briefing(db: Session = Depends(get_session)):
     except (httpx.HTTPStatusError, httpx.RequestError):
         raise HTTPException(502, "Voice service temporarily unavailable")
 
-    return Response(content=audio_bytes, media_type="audio/wav")
+    return Response(content=audio_bytes, media_type="audio/mpeg")
