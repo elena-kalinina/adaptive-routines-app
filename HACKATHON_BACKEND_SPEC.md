@@ -656,7 +656,154 @@ Key error cases:
 
 ---
 
-## 14. CORS and Frontend Connection
+## 14. Voice Daily Briefing -- SLNG.ai Integration (Optional)
+
+An optional "AI coach voice" feature. The backend generates a natural-language summary of today's sessions and converts it to speech via the [SLNG.ai](https://docs.slng.ai/hackathon) TTS API. SLNG provides a unified API across multiple TTS providers (Deepgram, ElevenLabs, Rime) -- swap models by changing the URL, not the code.
+
+### 14.1 Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SLNG_API_KEY` | For voice feature | -- | SLNG.ai API key (get one at [app.slng.ai](https://app.slng.ai)) |
+| `SLNG_TTS_MODEL` | No | `deepgram/aura:2` | TTS model. Low-latency default. Alternatives: `elevenlabs/eleven:3` (premium voices), `rime/arcana:3-en` (multilingual) |
+
+### 14.2 Briefing Text Generation
+
+Build the briefing text from today's sessions -- no LLM call needed, just string formatting. Place this in a helper function `build_briefing_text(sessions, resilience_score)` in a new file `voice.py` or inside `routers/voice.py`.
+
+Template logic:
+
+```python
+def build_briefing_text(sessions: list, score: int) -> str:
+    pending = [s for s in sessions if s.status == "pending"]
+    completed = [s for s in sessions if s.status in ("completed", "completed_mvr")]
+
+    if not pending and not completed:
+        return (
+            f"Good news! Your schedule is clear today. "
+            f"Your resilience score is {score}. "
+            f"Head to the Planner to start a new routine whenever you're ready."
+        )
+
+    greeting = "Good morning" if datetime.now().hour < 12 else "Good afternoon"
+    parts = [f"{greeting}!"]
+
+    if completed:
+        parts.append(f"You've already knocked out {len(completed)} session{'s' if len(completed) != 1 else ''} today. Nice work!")
+
+    if pending:
+        parts.append(f"You have {len(pending)} session{'s' if len(pending) != 1 else ''} coming up.")
+        for i, s in enumerate(pending[:3]):  # max 3 to keep it short
+            time_fmt = format_time_12h(s.scheduled_time)
+            parts.append(f"At {time_fmt}: {s.contextual_topic}.")
+        if len(pending) > 3:
+            parts.append(f"Plus {len(pending) - 3} more later.")
+
+    parts.append(
+        f"Your resilience score is {score}. "
+        f"Remember, even five minutes counts. You've got this!"
+    )
+
+    return " ".join(parts)
+```
+
+### 14.3 SLNG.ai TTS API Call
+
+SLNG uses a single bridge endpoint for all TTS providers. Swap models by changing the URL path.
+
+```python
+import httpx
+
+SLNG_TTS_URL = "https://api.slng.ai/v1/bridges/unmute/tts/{model}"
+
+async def text_to_speech(text: str, api_key: str, model: str) -> bytes:
+    url = SLNG_TTS_URL.format(model=model)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, json={
+            "text": text
+        }, headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        })
+        response.raise_for_status()
+        return response.content
+```
+
+The response is raw audio bytes (WAV format for Deepgram, may vary by provider).
+
+**Model options (swap by changing `SLNG_TTS_MODEL` env var):**
+- `deepgram/aura:2` -- fast, low latency, great for English (default)
+- `elevenlabs/eleven:3` -- premium voice quality
+- `rime/arcana:3-en` -- good multilingual support
+
+To pick a specific voice within a model, add `"model": "aura-2-theia-en"` to the request body (see [SLNG voice docs](https://docs.slng.ai/voices/deepgram-aura)).
+
+### 14.4 Endpoint
+
+#### `GET /api/voice/daily-briefing`
+
+**Logic:**
+1. Fetch today's sessions (reuse the same query as `GET /api/sessions/today`).
+2. Fetch resilience score.
+3. Build briefing text with `build_briefing_text()`.
+4. Call SLNG.ai TTS with the text.
+5. Return audio as a response.
+
+**Response:** `audio/wav` binary (or `audio/mpeg` depending on provider).
+
+**Headers:**
+```
+Content-Type: audio/wav
+Content-Disposition: inline
+```
+
+**Error handling:**
+- If `SLNG_API_KEY` is not set, return 501 with `{"detail": "Voice feature not configured"}`.
+- If SLNG API fails, return 502 with `{"detail": "Voice service temporarily unavailable"}`.
+
+**Implementation:**
+```python
+@router.get("/api/voice/daily-briefing")
+async def daily_briefing(db: Session = Depends(get_session)):
+    if not SLNG_API_KEY:
+        raise HTTPException(501, "Voice feature not configured")
+
+    sessions = get_today_sessions(db)
+    score = get_resilience_score(db)
+    text = build_briefing_text(sessions, score)
+    audio_bytes = await text_to_speech(text, SLNG_API_KEY, SLNG_TTS_MODEL)
+
+    return Response(content=audio_bytes, media_type="audio/wav")
+```
+
+### 14.5 File Placement
+
+Add to the backend structure:
+
+```
+backend/
+├── routers/
+│   ├── ...
+│   └── voice.py       # Daily briefing endpoint + text builder
+```
+
+### 14.6 Quick Test
+
+Verify your SLNG key works before integrating:
+
+```bash
+curl https://api.slng.ai/v1/bridges/unmute/tts/deepgram/aura:2 \
+  -H "Authorization: Bearer YOUR_SLNG_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from Adaptive Routines!"}' \
+  --output test.wav
+```
+
+If you hear "Hello from Adaptive Routines!" -- you're set.
+
+---
+
+## 15. CORS and Frontend Connection
 
 The backend runs on `http://localhost:8000`. The Lovable frontend will run on its own dev URL (typically `https://*.lovable.app` during development or `http://localhost:5173` if running locally).
 
@@ -664,10 +811,12 @@ CORS is configured to allow all origins (`*`) for the hackathon demo. Every resp
 
 ---
 
-## 15. Environment Variables
+## 16. Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GEMINI_API_KEY` | Yes | -- | Google Gemini API key |
 | `GEMINI_MODEL` | No | `gemini-3.0-pro` | Gemini model identifier (adjust to match available model name) |
 | `DATABASE_URL` | No | `sqlite:///routines.db` | SQLite database path |
+| `SLNG_API_KEY` | For voice | -- | SLNG.ai API key (omit to disable voice feature) |
+| `SLNG_TTS_MODEL` | No | `deepgram/aura:2` | SLNG TTS model (alternatives: `elevenlabs/eleven:3`, `rime/arcana:3-en`) |

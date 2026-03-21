@@ -81,6 +81,10 @@ Score function:
 - getScore() -- GET /api/score
   Returns: { resilience_score }
 
+Voice function (optional -- only used if SLNG.ai TTS is configured on backend):
+- getDailyBriefingAudio() -- GET /api/voice/daily-briefing
+  Returns: a Blob (audio/wav), NOT JSON. Use response.blob() instead of response.json().
+
 Each function should:
 - Use fetch() with the correct method and headers (Content-Type: application/json where needed)
 - Throw a descriptive error if the response is not ok (include the status code and error detail from the response body)
@@ -494,6 +498,46 @@ Make these final adjustments for a hackathon demo:
 
 ---
 
+## Step 10: Voice Daily Briefing (Optional -- ElevenLabs)
+
+**Goal:** Add a "hear your daily briefing" button that plays an AI-generated voice summary via [SLNG.ai](https://docs.slng.ai/hackathon) TTS. High demo impact, low effort.
+
+### Prompt 10.1 -- API Function + Play Button
+
+```
+Add a voice daily briefing feature to the Dashboard.
+
+First, add a new function to src/lib/api.ts:
+- getDailyBriefingAudio() -- GET /api/voice/daily-briefing
+  This returns audio/wav binary data, NOT JSON.
+  Implementation:
+  const response = await fetch(`${API_BASE_URL}/api/voice/daily-briefing`);
+  if (!response.ok) throw new Error("Voice unavailable");
+  return await response.blob();
+
+Now add a play button to the Dashboard top bar, next to the date:
+- A small circular button: w-9 h-9 rounded-full bg-teal-50 flex items-center justify-center
+- Icon: Volume2 from lucide-react, size 18, text-teal-500
+- Position it between the date text and the resilience score
+
+When tapped:
+1. Change the icon to a spinning loader (use the Loader2 icon with animate-spin)
+2. Call getDailyBriefingAudio() from the API
+3. Create an Audio object from the returned blob:
+   const url = URL.createObjectURL(blob);
+   const audio = new Audio(url);
+   audio.play();
+4. While playing: change the icon to a pulsing Volume2 (add animate-pulse)
+5. When playback ends (audio.onended): revert to the normal Volume2 icon, revoke the blob URL
+6. If the API returns an error (e.g. voice not configured), just hide the button entirely -- don't show an error. Check on initial load whether the voice endpoint is available by calling it once; if it returns 501, hide the button.
+
+The button should feel like a delightful bonus, not a core feature. Keep it subtle.
+
+IMPORTANT: Only show this button if the backend supports it. On first Dashboard load, make a lightweight check -- you can try a HEAD request to /api/voice/daily-briefing or just attempt the call and hide the button on failure.
+```
+
+---
+
 ## Implementation Order Summary
 
 | Step | What You Build | Key Outcome |
@@ -507,6 +551,7 @@ Make these final adjustments for a hackathon demo:
 | 7 | Plans library | Browse and extend plans |
 | 8 | Animations + PWA | Polish and native feel |
 | 9 | Demo polish | Hackathon-ready presentation |
+| 10 | Voice briefing (optional) | AI coach reads your daily schedule |
 
 ---
 
