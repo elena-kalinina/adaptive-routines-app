@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=True)
 
 from sqlmodel import Session, select
 from database import engine, init_db

@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-# Load .env from the repo root (one level up from backend/)
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+# Load .env from the repo root (one level up from backend/), override any existing env vars
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=True)
 
 from database import engine, init_db
 from models import UserProfile
